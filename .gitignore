@@ -1,0 +1,5 @@
+work/
+*.tbz2
+*.tar.gz
+*.log
+.env
