@@ -77,13 +77,13 @@ just BOARD=jetson-orin-nano-devkit flash
 | `JETSON_HOSTNAME`  | `/etc/hostname`.                                               |
 | `JETSON_HEADLESS`  | `true` → multi-user.target; mask gdm/oem-config GUI.           |
 | `JETSON_AUTOLOGIN` | `true` → systemd getty autologin on tty1.                      |
-| `JETSON_IFACE`     | Interface receiving static IP (default `eth0`).                |
-| `JETSON_STATIC_IP` | CIDR, e.g. `192.168.1.100/24`. Leave blank for DHCP.           |
-| `JETSON_GATEWAY`   | Default route.                                                 |
+| `JETSON_ETH_DEV`   | PCIe iface name. Orin Nano: `enP8p1s0`. Find via `ip -br link`.|
+| `JETSON_STATIC_IP` | CIDR, e.g. `10.42.0.10/24`. Leave blank for DHCP.              |
+| `JETSON_GATEWAY`   | Default route (leave blank → eth never owns default route).    |
 | `JETSON_DNS`       | Comma-separated DNS servers.                                   |
 | `JETSON_WIFI_SSID` | SSID. Blank → skip WiFi config. Requires M.2 WiFi card.        |
 | `JETSON_WIFI_PSK`  | WPA2 passphrase.                                               |
-| `JETSON_WIFI_IFACE`| Default `wlan0`.                                               |
+| `JETSON_WIFI_DEV`  | Blank → NetworkManager matches by SSID only (recommended).     |
 | `JETSON_WIFI_DHCP` | `true` (default) or `false`. Ignored when static IP is set.    |
 | `JETSON_WIFI_STATIC_IP` | Static CIDR for WiFi, e.g. `192.168.1.101/24`.            |
 | `JETSON_WIFI_GATEWAY`   | WiFi default route gateway (route metric 200, fallback).  |
@@ -136,10 +136,14 @@ Hold the **REC** (force-recovery) button on the carrier, tap **RST**
 2. Sets `default.target` to `multi-user.target`, masks `gdm3` and
    `nv-oem-config-gui`.
 3. Drops a getty `agetty --autologin` override on tty1.
-4. Writes `/etc/netplan/01-static-<eth>.yaml` + `02-wifi-<wlan>.yaml`
-   (mode 600). Eth = own subnet, no gateway; WiFi = static or DHCP with
-   default route, metric 200.
-5. Enables `ssh.service`, `wpa_supplicant.service`, `avahi-daemon.service`.
+4. Writes NetworkManager keyfiles into
+   `/etc/NetworkManager/system-connections/` (`eth-static.nmconnection`,
+   `wifi-home.nmconnection`, mode 600). Eth keyfile pins by
+   `interface-name=$JETSON_ETH_DEV`; WiFi keyfile matches by SSID and
+   stores the PSK plaintext. WiFi default route uses metric 200 so eth
+   stays primary when both ifaces have gateways.
+5. Enables `ssh.service` and `avahi-daemon.service`. NetworkManager is
+   already active in stock L4T so wpa_supplicant runs on demand via NM.
 6. Patches `/etc/nsswitch.conf` so `mdns4_minimal` resolves before DNS.
 
 ## Troubleshooting
