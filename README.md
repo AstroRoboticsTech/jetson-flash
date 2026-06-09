@@ -58,9 +58,17 @@ ssh beppo@beppo.local
 
 | Knob              | Default                              |
 |-------------------|--------------------------------------|
-| `L4T_VERSION`     | `36.4.4` (JetPack 6.2.1)             |
+| `L4T_VERSION`     | `39.2.0` (JetPack 7.2)               |
 | `BOARD`           | `jetson-orin-nano-devkit-super`      |
 | `EXTERNAL_DEVICE` | `nvme0n1p1`                          |
+
+> **JetPack 7.2 note.** JetPack 7.2 ships an interactive *Jetson ISO
+> USB installer* as the consumer flow (SD-card images are dropped). That
+> installer cannot bake user/hostname/headless/WiFi config and is not
+> scriptable. This repo deliberately stays on the host-side BSP +
+> `l4t_initrd_flash.sh` path, which still ships in the r39.2 Driver
+> Package and is the only way to produce an unattended headless image.
+> Rootfs is now Ubuntu 24.04 (was 22.04); kernel is 6.8.
 
 Override via `.env` (copy from `.env.example`) or on the command line:
 

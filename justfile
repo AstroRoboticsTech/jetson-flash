@@ -6,9 +6,9 @@ set dotenv-load := true
 
 # -- Configurable knobs (override in .env or on the command line) -----------
 
-L4T_VERSION       := env_var_or_default("L4T_VERSION", "36.4.4")
-BSP_URL           := env_var_or_default("BSP_URL", "https://developer.nvidia.com/downloads/embedded/l4t/r36_release_v4.4/release/Jetson_Linux_R36.4.4_aarch64.tbz2")
-ROOTFS_URL        := env_var_or_default("ROOTFS_URL", "https://developer.nvidia.com/downloads/embedded/l4t/r36_release_v4.4/release/Tegra_Linux_Sample-Root-Filesystem_R36.4.4_aarch64.tbz2")
+L4T_VERSION       := env_var_or_default("L4T_VERSION", "39.2.0")
+BSP_URL           := env_var_or_default("BSP_URL", "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Jetson_Linux_R39.2.0_aarch64.tbz2")
+ROOTFS_URL        := env_var_or_default("ROOTFS_URL", "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Tegra_Linux_Sample-Root-Filesystem_R39.2.0_aarch64.tbz2")
 BOARD             := env_var_or_default("BOARD", "jetson-orin-nano-devkit-super")
 EXTERNAL_DEVICE   := env_var_or_default("EXTERNAL_DEVICE", "nvme0n1p1")
 WORK              := justfile_directory() + "/work"
@@ -74,3 +74,8 @@ no-autosuspend:
 # After flash: list serial consoles to attach (target reboots into oem-config).
 serial:
     @ls -l /dev/serial/by-id/ 2>/dev/null || echo "No USB serial devices."
+
+# Tail the latest log for a step: deps|fetch|stage|preconfig|check|flash.
+logs step="flash":
+    @f=$(ls -t logs/{{step}}-*.log 2>/dev/null | head -1); \
+        [ -n "$f" ] && { echo "== $f =="; tail -n 40 "$f"; } || echo "No {{step}} logs yet."

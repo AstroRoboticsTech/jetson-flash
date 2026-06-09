@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+log_init preconfig
 
 # Bake first-boot identity, headless target, static IPs, WiFi, and mDNS
 # into the L4T rootfs BEFORE flashing. After flashing the board boots
@@ -39,12 +41,12 @@ JETSON_AVAHI="${JETSON_AVAHI:-true}"
 cd "$L4T_DIR"
 
 if [[ ! -d "$ROOTFS/etc" ]]; then
-    echo "[fail] $ROOTFS not staged. Run 'just stage' first."
+    log_err "$ROOTFS not staged. Run 'just stage' first."
     exit 1
 fi
 
 # --- 1. Pre-create user, skip oem-config wizard ---------------------------
-echo "[preconfig] creating default user $JETSON_USERNAME on host $JETSON_HOSTNAME"
+log_step "creating default user $JETSON_USERNAME on host $JETSON_HOSTNAME"
 sudo ./tools/l4t_create_default_user.sh \
     -u "$JETSON_USERNAME" \
     -p "$JETSON_PASSWORD" \
@@ -53,7 +55,7 @@ sudo ./tools/l4t_create_default_user.sh \
 
 # --- 2. Headless: drop GUI target, mask display managers ------------------
 if [[ "$JETSON_HEADLESS" == "true" ]]; then
-    echo "[preconfig] headless mode: multi-user.target + mask gdm3"
+    log_step "headless mode: multi-user.target + mask gdm3"
     sudo ln -sf /lib/systemd/system/multi-user.target "$ROOTFS/etc/systemd/system/default.target"
     sudo ln -sf /dev/null "$ROOTFS/etc/systemd/system/gdm3.service"
     sudo ln -sf /dev/null "$ROOTFS/etc/systemd/system/gdm.service"
@@ -62,7 +64,7 @@ fi
 
 # --- 3. Auto-login on tty1 -----------------------------------------------
 if [[ "$JETSON_AUTOLOGIN" == "true" ]]; then
-    echo "[preconfig] enabling tty1 autologin for $JETSON_USERNAME"
+    log_step "enabling tty1 autologin for $JETSON_USERNAME"
     OVERRIDE_DIR="$ROOTFS/etc/systemd/system/getty@tty1.service.d"
     sudo mkdir -p "$OVERRIDE_DIR"
     sudo tee "$OVERRIDE_DIR/override.conf" >/dev/null <<EOF
@@ -78,7 +80,7 @@ DNS_NM=$(echo "$JETSON_DNS" | sed 's/,/;/g')
 
 # 4a. Ethernet static IP --------------------------------------------------
 if [[ -n "$JETSON_STATIC_IP" ]]; then
-    echo "[preconfig] eth static $JETSON_STATIC_IP on $JETSON_ETH_DEV"
+    log_step "eth static $JETSON_STATIC_IP on $JETSON_ETH_DEV"
     sudo mkdir -p "$NM_DIR"
     ETH_UUID=$(uuidgen)
     if [[ -n "$JETSON_GATEWAY" ]]; then
@@ -115,7 +117,7 @@ fi
 # 4b. WiFi via NetworkManager keyfile -------------------------------------
 if [[ -n "$JETSON_WIFI_SSID" ]]; then
     if [[ -z "$JETSON_WIFI_PSK" ]]; then
-        echo "[fail] JETSON_WIFI_SSID set but JETSON_WIFI_PSK empty."
+        log_err "JETSON_WIFI_SSID set but JETSON_WIFI_PSK empty."
         exit 1
     fi
     sudo mkdir -p "$NM_DIR"
@@ -124,7 +126,7 @@ if [[ -n "$JETSON_WIFI_SSID" ]]; then
     [[ -n "$JETSON_WIFI_DEV" ]] && WIFI_IFACE_LINE="interface-name=$JETSON_WIFI_DEV"
 
     if [[ -n "$JETSON_WIFI_STATIC_IP" ]]; then
-        echo "[preconfig] WiFi $JETSON_WIFI_SSID static $JETSON_WIFI_STATIC_IP (metric 200)"
+        log_step "WiFi $JETSON_WIFI_SSID static $JETSON_WIFI_STATIC_IP (metric 200)"
         if [[ -n "$JETSON_WIFI_GATEWAY" ]]; then
             WIFI_ADDR="${JETSON_WIFI_STATIC_IP},${JETSON_WIFI_GATEWAY}"
         else
@@ -136,7 +138,7 @@ address1=$WIFI_ADDR
 dns=$DNS_NM;
 route-metric=200"
     elif [[ "$JETSON_WIFI_DHCP" == "true" ]]; then
-        echo "[preconfig] WiFi $JETSON_WIFI_SSID DHCP (metric 200)"
+        log_step "WiFi $JETSON_WIFI_SSID DHCP (metric 200)"
         IPV4_BLOCK="[ipv4]
 method=auto
 route-metric=200"
@@ -172,7 +174,7 @@ fi
 
 # --- 4c. mDNS / avahi (so <hostname>.local resolves) ---------------------
 if [[ "$JETSON_AVAHI" == "true" ]]; then
-    echo "[preconfig] enabling avahi-daemon (mDNS for ${JETSON_HOSTNAME}.local)"
+    log_step "enabling avahi-daemon (mDNS for ${JETSON_HOSTNAME}.local)"
     sudo chroot "$ROOTFS" /bin/bash -c "systemctl enable avahi-daemon.service" 2>/dev/null || \
         sudo ln -sf /lib/systemd/system/avahi-daemon.service \
             "$ROOTFS/etc/systemd/system/multi-user.target.wants/avahi-daemon.service"
@@ -183,9 +185,9 @@ if [[ "$JETSON_AVAHI" == "true" ]]; then
 fi
 
 # --- 5. SSH server enabled by default -------------------------------------
-echo "[preconfig] enabling ssh"
+log_step "enabling ssh"
 sudo chroot "$ROOTFS" /bin/bash -c "systemctl enable ssh.service" 2>/dev/null || \
     sudo ln -sf /lib/systemd/system/ssh.service \
         "$ROOTFS/etc/systemd/system/multi-user.target.wants/ssh.service"
 
-echo "[ok] Rootfs preconfigured. Ready to flash."
+log_ok "Rootfs preconfigured. Ready to flash."

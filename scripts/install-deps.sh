@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+log_init deps
 
 if ! grep -q 'VERSION_ID="24.04"' /etc/os-release; then
-    echo "[warn] Host is not Ubuntu 24.04. Continuing anyway."
+    log_warn "Host is not Ubuntu 24.04. Continuing anyway."
 fi
 
 PKGS=(
@@ -27,8 +29,8 @@ sudo apt-get update
 sudo apt-get install -y "${PKGS[@]}"
 
 if [[ ! -e /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
-    echo "[info] Registering qemu-aarch64 binfmt handler."
+    log_info "Registering qemu-aarch64 binfmt handler."
     sudo systemctl restart systemd-binfmt || true
 fi
 
-echo "[ok] Host dependencies installed."
+log_ok "Host dependencies installed."
