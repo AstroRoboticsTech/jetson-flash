@@ -1,19 +1,29 @@
 # jetson-flash
 
-Terminal-only flashing pipeline for the Jetson Orin Nano 8GB Super devkit
+Terminal-only flashing pipeline for NVIDIA Jetson Orin devkits (Tegra234)
 from an Ubuntu 24.04 host. No SDK Manager, no Nix. Drives the official
 NVIDIA L4T `flash.sh` / `l4t_initrd_flash.sh` scripts through `just`.
 
-The end result is a fully headless Orin Nano that boots straight into a
+The end result is a fully headless board that boots straight into a
 logged-in shell, joins WiFi + wired LAN automatically, and answers to
 `ssh <user>@<hostname>.local`. No display, no first-boot wizard.
+
+## Supported boards
+
+The pipeline is board-agnostic via the `.env` knobs. Per-board values
+(board conf, iface names, boot device, recovery) live in their own doc:
+
+| Board                          | Doc                                  | Status         |
+|--------------------------------|--------------------------------------|----------------|
+| Jetson Orin Nano 8GB Super     | [docs/orin-nano.md](docs/orin-nano.md) | Validated r39.2 |
+| Jetson AGX Orin devkit         | [docs/orin-agx.md](docs/orin-agx.md)   | Board-ready (not yet flash-validated) |
 
 ## Prerequisites
 
 - **Host:** Ubuntu 24.04 x86_64. ~10 GB free disk. USB-C cable to the board.
-- **Target:** Jetson Orin Nano 8GB devkit. NVMe SSD installed in the M.2
-  M-key slot. (For WiFi: M.2 E-key WiFi card seated in the small slot —
-  the bare Nano module has no radio.)
+- **Target:** a supported Jetson Orin devkit with an NVMe SSD in the M.2
+  M-key slot. See the per-board doc above for board-specific hardware
+  (WiFi card, boot device, recovery buttons).
 - `just` installed: `cargo install just` or `apt install just` (24.04
   ships ≥1.34).
 - `git`, `wget`, `sudo`.
@@ -59,7 +69,7 @@ ssh beppo@beppo.local
 | Knob              | Default                              |
 |-------------------|--------------------------------------|
 | `L4T_VERSION`     | `39.2.0` (JetPack 7.2)               |
-| `BOARD`           | `jetson-orin-nano-devkit-super`      |
+| `BOARD`           | `jetson-orin-nano-devkit-super` (see per-board doc) |
 | `EXTERNAL_DEVICE` | `nvme0n1p1`                          |
 
 > **JetPack 7.2 note.** JetPack 7.2 ships an interactive *Jetson ISO
@@ -70,11 +80,9 @@ ssh beppo@beppo.local
 > Package and is the only way to produce an unattended headless image.
 > Rootfs is now Ubuntu 24.04 (was 22.04); kernel is 6.8.
 
-Override via `.env` (copy from `.env.example`) or on the command line:
-
-```bash
-just BOARD=jetson-orin-nano-devkit flash
-```
+`BOARD` is the one knob that changes per board — set it from the
+[per-board doc](#supported-boards). Override via `.env` or on the command
+line (`just BOARD=jetson-agx-orin-devkit flash`).
 
 ## First-boot identity (set in `.env`)
 
@@ -100,23 +108,17 @@ just BOARD=jetson-orin-nano-devkit flash
 After `just flash` the board boots directly to a logged-in tty on the
 configured IP. SSH is enabled. No display, no oem-config wizard.
 
-## Reachability
-
-With the default `.env`:
-
-| Address                  | Path                                  |
-|--------------------------|---------------------------------------|
-| `ssh beppo@beppo.local`  | mDNS (avahi) — works on any iface     |
-| `ssh beppo@10.42.0.10`   | Direct Ethernet cable to dev host     |
-| `ssh beppo@192.168.1.101`| Home LAN via WiFi (primary internet)  |
-
-Host side, set the dev cable end to `10.42.0.1/24` (NetworkManager or
-`nmcli con add type ethernet ifname enpXsY ipv4.addresses 10.42.0.1/24`).
-
 ## Recovery mode
 
-Hold the **REC** (force-recovery) button on the carrier, tap **RST**
-(reset), release REC. `lsusb` should show one of:
+The board must be in APX recovery before `just flash`. Button/jumper
+location differs per board — see the per-board doc. If the board is already
+running and reachable, software-trigger it:
+
+```bash
+ssh <user>@<host> 'sudo reboot --force forced-recovery'
+```
+
+`just check` confirms recovery via `lsusb`:
 
 | USB ID       | Board                       |
 |--------------|-----------------------------|
@@ -124,7 +126,10 @@ Hold the **REC** (force-recovery) button on the carrier, tap **RST**
 | `0955:7423`  | Orin NX in APX recovery     |
 | `0955:7023`  | AGX Orin in APX recovery    |
 
-`0955:7020` means L4T is already running — NOT recovery; cycle REC+RST.
+`0955:7020` means L4T is already running — NOT recovery; re-trigger.
+
+Per-board reachability (mDNS / eth / WiFi addresses) is documented in each
+[board doc](#supported-boards).
 
 ## Ubuntu 24.04 host gotchas
 
