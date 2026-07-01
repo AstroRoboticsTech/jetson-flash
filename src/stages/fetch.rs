@@ -6,12 +6,12 @@ use crate::{
 use std::fs;
 
 pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
-    fs::create_dir_all(&paths.work).ctx(|| format!("mkdir {}", paths.work.display()))?;
+    fs::create_dir_all(&paths.downloads).ctx(|| format!("mkdir {}", paths.downloads.display()))?;
 
-    fetch_one(log, &paths.work, &cfg.l4t.bsp_url)?;
-    fetch_one(log, &paths.work, &cfg.l4t.rootfs_url)?;
+    fetch_one(log, &paths.downloads, cfg.l4t.bsp_url())?;
+    fetch_one(log, &paths.downloads, cfg.l4t.rootfs_url())?;
 
-    log.ok(&format!("Tarballs in {}.", paths.work.display()));
+    log.ok(&format!("Tarballs in {}.", paths.downloads.display()));
     Ok(())
 }
 

@@ -7,19 +7,21 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn run(_cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
-    let bsp = find_tarball(&paths.work, "Jetson_Linux_R", "_aarch64.tbz2").ok_or_else(|| {
-        Error::Missing(
-            "BSP tarball (Jetson_Linux_R*_aarch64.tbz2) not found in work/; run `fetch`".into(),
-        )
-    })?;
+    let bsp =
+        find_tarball(&paths.downloads, "Jetson_Linux_R", "_aarch64.tbz2").ok_or_else(|| {
+            Error::Missing(
+                "BSP tarball (Jetson_Linux_R*_aarch64.tbz2) not found; run `fetch`".into(),
+            )
+        })?;
     let rootfs = find_tarball(
-        &paths.work,
+        &paths.downloads,
         "Tegra_Linux_Sample-Root-Filesystem_R",
         "_aarch64.tbz2",
     )
-    .ok_or_else(|| Error::Missing("rootfs tarball not found in work/; run `fetch`".into()))?;
+    .ok_or_else(|| Error::Missing("rootfs tarball not found; run `fetch`".into()))?;
 
     log.sudo_validate()?;
+    fs::create_dir_all(&paths.work).ok();
 
     if paths.l4t_dir.exists() {
         log.info("reusing existing Linux_for_Tegra/ (BSP already extracted)");

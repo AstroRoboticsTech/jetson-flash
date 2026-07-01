@@ -1,5 +1,6 @@
 work/
 work_*.bak/
+downloads/
 target/
 logs/
 *.tbz2

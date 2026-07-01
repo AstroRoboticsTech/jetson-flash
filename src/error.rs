@@ -46,6 +46,9 @@ pub enum Error {
     #[error("unknown profile `{name}` (available: {})", .known.join(", "))]
     UnknownProfile { name: String, known: Vec<String> },
 
+    #[error("unknown jetpack `{name}` (known: {})", .known.join(", "))]
+    UnknownJetpack { name: String, known: Vec<String> },
+
     #[error("{0} is required — supply it via environment (e.g. JETSON_IDENTITY_PASSWORD)")]
     MissingSecret(&'static str),
 

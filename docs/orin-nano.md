@@ -40,9 +40,9 @@ running, not recovery — re-cycle REC+RST.
 
 | Address                  | Path                                |
 |--------------------------|-------------------------------------|
-| `ssh beppo@beppo.local`  | mDNS (avahi) — any iface            |
-| `ssh beppo@10.42.0.10`   | Direct Ethernet cable to dev host   |
-| `ssh beppo@192.168.1.101`| Home LAN via WiFi                   |
+| `ssh jetson@orin-nano.local`  | mDNS (avahi) — any iface       |
+| `ssh jetson@10.42.0.10`       | Direct Ethernet cable to dev host |
+| `ssh jetson@192.168.1.101`    | Home LAN via WiFi              |
 
 Host side, set the dev cable end to `10.42.0.1/24`.
 

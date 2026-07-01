@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+    /// JetPack release the profile targets (`"6.2"` or `"7.2"`). Fills the
+    /// `l4t` version + URLs from a built-in preset; explicit `l4t.*` overrides.
+    #[serde(default)]
+    pub jetpack: Option<String>,
+    #[serde(default)]
     pub l4t: L4t,
     pub board: Board,
     pub identity: Identity,
@@ -17,11 +22,56 @@ pub struct Config {
     pub services: Services,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct L4t {
-    pub version: String,
-    pub bsp_url: String,
-    pub rootfs_url: String,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub bsp_url: Option<String>,
+    #[serde(default)]
+    pub rootfs_url: Option<String>,
+}
+
+impl L4t {
+    pub fn version(&self) -> &str {
+        self.version.as_deref().unwrap_or_default()
+    }
+    pub fn bsp_url(&self) -> &str {
+        self.bsp_url.as_deref().unwrap_or_default()
+    }
+    pub fn rootfs_url(&self) -> &str {
+        self.rootfs_url.as_deref().unwrap_or_default()
+    }
+}
+
+/// A JetPack release mapped to its L4T version and download URLs.
+struct JetpackPreset {
+    version: &'static str,
+    bsp_url: &'static str,
+    rootfs_url: &'static str,
+}
+
+fn jetpack_preset(v: &str) -> Option<JetpackPreset> {
+    match v {
+        // JetPack 7.2 => L4T r39.2 (Ubuntu 24.04 rootfs, kernel 6.8).
+        "7.2" => Some(JetpackPreset {
+            version: "39.2.0",
+            bsp_url: "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Jetson_Linux_R39.2.0_aarch64.tbz2",
+            rootfs_url: "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Tegra_Linux_Sample-Root-Filesystem_R39.2.0_aarch64.tbz2",
+        }),
+        // JetPack 6.2.1 => L4T r36.4.4 (Ubuntu 22.04 rootfs).
+        "6.2.1" => Some(JetpackPreset {
+            version: "36.4.4",
+            bsp_url: "https://developer.nvidia.com/downloads/embedded/L4T/r36_Release_v4.4/release/Jetson_Linux_R36.4.4_aarch64.tbz2",
+            rootfs_url: "https://developer.nvidia.com/downloads/embedded/L4T/r36_Release_v4.4/release/Tegra_Linux_Sample-Root-Filesystem_R36.4.4_aarch64.tbz2",
+        }),
+        _ => None,
+    }
+}
+
+/// JetPack releases with a built-in preset.
+pub fn known_jetpacks() -> Vec<String> {
+    vec!["6.2.1".to_string(), "7.2".to_string()]
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -126,7 +176,33 @@ impl Config {
                 known,
             });
         }
-        Ok(fig.select(profile).extract()?)
+        let mut cfg: Config = fig.select(profile).extract()?;
+        cfg.resolve_l4t()?;
+        Ok(cfg)
+    }
+
+    /// Fill `l4t` from the `jetpack` preset (explicit `l4t.*` wins), then
+    /// verify all three L4T fields are resolved.
+    fn resolve_l4t(&mut self) -> Result<()> {
+        if let Some(jp) = self.jetpack.clone() {
+            let p = jetpack_preset(&jp).ok_or_else(|| Error::UnknownJetpack {
+                name: jp,
+                known: known_jetpacks(),
+            })?;
+            let l = &mut self.l4t;
+            l.version.get_or_insert_with(|| p.version.to_string());
+            l.bsp_url.get_or_insert_with(|| p.bsp_url.to_string());
+            l.rootfs_url.get_or_insert_with(|| p.rootfs_url.to_string());
+        }
+        if self.l4t.version.is_none() || self.l4t.bsp_url.is_none() || self.l4t.rootfs_url.is_none()
+        {
+            return Err(Error::Missing(
+                "l4t unresolved: set `jetpack = \"7.2\"` (or 6.2.1) on the profile, \
+                 or l4t.version/bsp_url/rootfs_url explicitly"
+                    .into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Profile names defined in the config file (excludes `default`).
@@ -134,13 +210,10 @@ impl Config {
         profile_names(&base_figment(path))
     }
 
-    /// DNS as a NetworkManager keyfile list ("1.1.1.1;8.8.8.8;").
+    /// DNS servers joined for a NetworkManager keyfile ("1.1.1.1;8.8.8.8").
+    /// The keyfile templates append the single trailing `;`.
     pub fn dns_nm(&self) -> String {
-        let mut s = self.network.ethernet.dns.join(";");
-        if !s.is_empty() {
-            s.push(';');
-        }
-        s
+        self.network.ethernet.dns.join(";")
     }
 }
 
@@ -156,6 +229,16 @@ pub fn xdg_config_path() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?;
     Some(base.join("jetson-flash").join("jetson-flash.toml"))
+}
+
+/// `$XDG_CACHE_HOME/jetson-flash` (falls back to `$HOME/.cache/jetson-flash`).
+/// Where an installed binary keeps its downloads + staging. `None` if neither
+/// env var is set.
+pub fn cache_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))?;
+    Some(base.join("jetson-flash"))
 }
 
 /// Resolve which config file to use: explicit `--config`, else

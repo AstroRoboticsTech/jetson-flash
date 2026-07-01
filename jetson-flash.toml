@@ -12,12 +12,9 @@
 # Any JETSON_* var fills a key the active profile leaves unset.
 
 [default]
-
-[default.l4t]
-# JetPack 7.2 / L4T r39.2. Shared across Orin boards.
-version    = "39.2.0"
-bsp_url    = "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Jetson_Linux_R39.2.0_aarch64.tbz2"
-rootfs_url = "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Tegra_Linux_Sample-Root-Filesystem_R39.2.0_aarch64.tbz2"
+# Each profile picks a JetPack via `jetpack = "6.2.1" | "7.2"`, which resolves
+# the L4T version + BSP/rootfs URLs from a built-in preset. To pin a custom
+# L4T instead, set [<profile>.l4t] version/bsp_url/rootfs_url explicitly.
 
 [default.identity]
 username  = "jetson"
@@ -30,6 +27,7 @@ avahi = true
 
 # --- Orin Nano 8GB Super devkit -------------------------------------------
 [orin-nano]
+jetpack = "7.2"                 # "6.2.1" => L4T r36.4.4 (Ubuntu 22.04)
 
 [orin-nano.board]
 name            = "jetson-orin-nano-devkit-super"
@@ -53,6 +51,7 @@ gateway   = ""
 
 # --- AGX Orin devkit ------------------------------------------------------
 [orin-agx]
+jetpack = "7.2"
 
 [orin-agx.board]
 name            = "jetson-agx-orin-devkit-super"   # 64GB => -super (MAXN SUPER)

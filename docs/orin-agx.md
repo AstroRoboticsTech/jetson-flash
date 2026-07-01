@@ -54,13 +54,12 @@ ssh <user>@<host> 'sudo reboot --force forced-recovery'
 
 ## Status
 
-Pipeline is board-ready (conf present in r39.2 BSP, recovery ID handled).
-Not yet flash-validated on hardware — fill the table below after the first
-run.
+Flash-validated on hardware (JetPack 7.2 / L4T r39.2, NVMe boot).
 
-| Check          | Result   |
-|----------------|----------|
-| L4T / JetPack  | _TBD_    |
-| Boot device    | _TBD_    |
-| `JETSON_ETH_DEV` actual | _TBD_ |
-| Power model    | _TBD_    |
+| Check          | Result              |
+|----------------|---------------------|
+| L4T / JetPack  | r39.2 / JetPack 7.2 |
+| Boot device    | NVMe (`nvme0n1p1`)  |
+| Power model    | MAXN SUPER (`-super`) |
+
+Verify `JETSON_ETH_DEV` per unit (AGX Marvell AQtion iface) — see below.

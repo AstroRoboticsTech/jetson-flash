@@ -17,7 +17,6 @@ pub struct Logger {
     verbose: bool,
     file: Arc<Mutex<File>>,
     path: PathBuf,
-    repo_root: PathBuf,
     bar: Mutex<Option<ProgressBar>>,
 }
 
@@ -48,8 +47,9 @@ const PLAIN: Ansi = Ansi {
 };
 
 impl Logger {
-    pub fn init(step: &str, repo_root: &Path, verbose: bool) -> Result<Self> {
-        let dir = repo_root.join("logs");
+    /// `log_dir` is the exact directory to write `<step>-<ts>.log` into.
+    pub fn init(step: &str, log_dir: &Path, verbose: bool) -> Result<Self> {
+        let dir = log_dir.to_path_buf();
         fs::create_dir_all(&dir).ctx(|| format!("mkdir {}", dir.display()))?;
         let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
         let fname = format!("{step}-{ts}.log");
@@ -71,16 +71,13 @@ impl Logger {
             verbose,
             file: Arc::new(Mutex::new(file)),
             path,
-            repo_root: repo_root.to_path_buf(),
             bar: Mutex::new(None),
         };
-        let rel = logger
-            .path
-            .strip_prefix(repo_root)
-            .unwrap_or(&logger.path)
-            .display()
-            .to_string();
-        logger.info(&format!("logging {step} -> {rel}"));
+        let shown = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| logger.path.strip_prefix(&cwd).ok().map(Path::to_path_buf))
+            .unwrap_or_else(|| logger.path.clone());
+        logger.info(&format!("logging {step} -> {}", shown.display()));
         Ok(logger)
     }
 
@@ -144,9 +141,11 @@ impl Logger {
         }
     }
 
-    /// Run a command from the repo root, capturing output (spinner UX).
+    /// Run a command from the current directory, capturing output (spinner UX).
+    /// (Callers that care about cwd use `run_in`; these commands use absolute
+    /// paths so cwd is irrelevant.)
     pub fn run(&self, program: &str, args: &[&str]) -> Result<()> {
-        self.run_in(program, args, &self.repo_root)
+        self.run_in(program, args, Path::new("."))
     }
 
     /// Run a command in `cwd`, capturing output to the log with a spinner.
@@ -229,9 +228,10 @@ impl Logger {
     }
 
     fn rel_log(&self) -> String {
-        self.path
-            .strip_prefix(&self.repo_root)
-            .unwrap_or(&self.path)
+        std::env::current_dir()
+            .ok()
+            .and_then(|cwd| self.path.strip_prefix(&cwd).ok().map(Path::to_path_buf))
+            .unwrap_or_else(|| self.path.clone())
             .display()
             .to_string()
     }

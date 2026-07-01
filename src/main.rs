@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use jetson_flash::{config, logging::Logger, stages, Config, Paths};
+use clap::{CommandFactory, Parser, Subcommand};
+use jetson_flash::{config, Config, Paths, Step};
 use std::path::PathBuf;
 
 /// Headless Jetson Orin (Tegra234) flashing pipeline.
@@ -11,9 +11,14 @@ struct Cli {
     #[arg(long, global = true)]
     config: Option<PathBuf>,
 
-    /// Repo/work root (default: current directory).
+    /// Repo root for config/dev detection (default: current directory).
     #[arg(long, global = true)]
     repo_root: Option<PathBuf>,
+
+    /// Workspace base for downloads + staging + logs. Default: the repo when
+    /// run from a checkout, else the cache dir (~/.cache/jetson-flash).
+    #[arg(long, global = true, env = "JETSON_WORK_DIR")]
+    work_dir: Option<PathBuf>,
 
     /// Stream all subprocess output live instead of capturing it to the log.
     #[arg(short, long, global = true)]
@@ -25,7 +30,7 @@ struct Cli {
     profile: Option<String>,
 
     #[command(subcommand)]
-    cmd: Cmd,
+    cmd: Option<Cmd>,
 }
 
 #[derive(Subcommand)]
@@ -63,23 +68,29 @@ enum Cmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Bare `jetson-flash` (no subcommand): print help on stdout, exit 0.
+    let Some(cmd) = cli.cmd else {
+        Cli::command().print_help()?;
+        println!();
+        return Ok(());
+    };
+
     let repo_root = match cli.repo_root {
         Some(p) => p,
         None => std::env::current_dir().context("resolve current dir")?,
     };
-    let paths = Paths::new(&repo_root);
 
-    if let Cmd::Init { global, force } = cli.cmd {
+    if let Cmd::Init { global, force } = cmd {
         return init_config(cli.config.clone(), &repo_root, global, force);
     }
 
     let config_path = config::resolve_config_path(cli.config.clone(), &repo_root);
 
-    if matches!(cli.cmd, Cmd::Edit) {
+    if matches!(cmd, Cmd::Edit) {
         return edit_config(&config_path);
     }
 
-    if matches!(cli.cmd, Cmd::Profiles) {
+    if matches!(cmd, Cmd::Profiles) {
         let names = Config::profiles(&config_path);
         if names.is_empty() {
             println!("no profiles defined in {}", config_path.display());
@@ -104,29 +115,36 @@ fn main() -> Result<()> {
         anyhow::anyhow!("--profile is required (or set JETSON_PROFILE). Available: {known}")
     })?;
     let cfg = Config::load(&config_path, &profile)?;
-    let run = Runner {
-        cfg: &cfg,
-        paths: &paths,
-        verbose: cli.verbose,
-    };
 
-    match cli.cmd {
+    let base = resolve_base(cli.work_dir.clone(), &repo_root)?;
+    let paths = Paths::new(&base, &profile, cfg.l4t.version());
+    let v = cli.verbose;
+
+    let step = match cmd {
         Cmd::Init { .. } | Cmd::Edit | Cmd::Profiles => unreachable!("handled above"),
-        Cmd::Deps => run.step("deps", stages::deps::run),
-        Cmd::Fetch => run.step("fetch", stages::fetch::run),
-        Cmd::Stage => run.step("stage", stages::stage::run),
-        Cmd::Preconfig => run.step("preconfig", stages::preconfig::run),
-        Cmd::Check => run.step("check", stages::check::run),
-        Cmd::Flash => run.step("flash", stages::flash::run),
-        Cmd::All => {
-            run.step("deps", stages::deps::run)?;
-            run.step("fetch", stages::fetch::run)?;
-            run.step("stage", stages::stage::run)?;
-            run.step("preconfig", stages::preconfig::run)?;
-            run.step("check", stages::check::run)?;
-            run.step("flash", stages::flash::run)
-        }
+        Cmd::Deps => Step::Deps,
+        Cmd::Fetch => Step::Fetch,
+        Cmd::Stage => Step::Stage,
+        Cmd::Preconfig => Step::Preconfig,
+        Cmd::Check => Step::Check,
+        Cmd::Flash => Step::Flash,
+        Cmd::All => return Ok(jetson_flash::run_all(&cfg, &paths, v)?),
+    };
+    Ok(jetson_flash::run_step(step, &cfg, &paths, v)?)
+}
+
+/// Resolve the workspace base for downloads + staging + logs: explicit
+/// `--work-dir`, else the repo when run from a checkout (`Cargo.toml` present),
+/// else the cache dir (`~/.cache/jetson-flash`).
+fn resolve_base(work_dir: Option<PathBuf>, repo_root: &std::path::Path) -> Result<PathBuf> {
+    if let Some(w) = work_dir {
+        return Ok(w);
     }
+    if repo_root.join("Cargo.toml").exists() {
+        return Ok(repo_root.to_path_buf());
+    }
+    config::cache_dir()
+        .context("cannot resolve cache dir (set XDG_CACHE_HOME or HOME, or pass --work-dir)")
 }
 
 /// Seed a jetson-flash.toml from the embedded template. Destination:
@@ -177,21 +195,4 @@ fn edit_config(path: &std::path::Path) -> Result<()> {
         anyhow::bail!("editor `{editor}` exited with {status}");
     }
     Ok(())
-}
-
-struct Runner<'a> {
-    cfg: &'a Config,
-    paths: &'a Paths,
-    verbose: bool,
-}
-
-impl Runner<'_> {
-    fn step(
-        &self,
-        name: &str,
-        f: impl Fn(&Config, &Paths, &Logger) -> jetson_flash::Result<()>,
-    ) -> Result<()> {
-        let log = Logger::init(name, &self.paths.repo_root, self.verbose)?;
-        Ok(f(self.cfg, self.paths, &log)?)
-    }
 }
