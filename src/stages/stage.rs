@@ -19,14 +19,18 @@ pub fn run(_cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
 
     log.sudo_validate()?;
 
-    if !paths.l4t_dir.exists() {
+    if paths.l4t_dir.exists() {
+        log.info("reusing existing Linux_for_Tegra/ (BSP already extracted)");
+    } else {
         log.step("extract BSP -> Linux_for_Tegra/");
         log.run_in("tar", &["xf", bsp.to_str().unwrap()], &paths.work)?;
     }
 
     let l4t = paths.l4t_dir.to_str().unwrap();
 
-    if !paths.rootfs().join("etc/os-release").exists() {
+    if paths.rootfs().join("etc/os-release").exists() {
+        log.info("rootfs already extracted; skipping");
+    } else {
         log.step("extract sample rootfs -> rootfs/");
         log.run_in(
             "sudo",
@@ -40,11 +44,13 @@ pub fn run(_cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
         log.run_in("sudo", &["./tools/l4t_flash_prerequisites.sh"], &paths.l4t_dir)?;
     }
 
-    if !paths
+    if paths
         .rootfs()
         .join("usr/lib/aarch64-linux-gnu/tegra")
         .exists()
     {
+        log.info("NVIDIA binaries already applied; skipping apply_binaries.sh");
+    } else {
         log.step("apply_binaries.sh");
         log.run_in("sudo", &["./apply_binaries.sh"], &paths.l4t_dir)?;
     }

@@ -20,25 +20,33 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
     }
     log.sudo_validate()?;
 
-    // 1. Pre-create user, skip oem-config wizard.
-    log.step(&format!(
-        "creating default user {} on host {}",
-        cfg.identity.username, cfg.identity.hostname
-    ));
-    log.run_in(
-        "sudo",
-        &[
-            "./tools/l4t_create_default_user.sh",
-            "-u",
-            &cfg.identity.username,
-            "-p",
-            &cfg.identity.password,
-            "-n",
-            &cfg.identity.hostname,
-            "--accept-license",
-        ],
-        &paths.l4t_dir,
-    )?;
+    // 1. Pre-create user, skip oem-config wizard. Not idempotent, so guard on
+    // whether the user is already baked into the rootfs (safe to re-run).
+    if user_baked(&rootfs, &cfg.identity.username) {
+        log.info(&format!(
+            "user {} already baked into rootfs; skipping create_default_user",
+            cfg.identity.username
+        ));
+    } else {
+        log.step(&format!(
+            "creating default user {} on host {}",
+            cfg.identity.username, cfg.identity.hostname
+        ));
+        log.run_in(
+            "sudo",
+            &[
+                "./tools/l4t_create_default_user.sh",
+                "-u",
+                &cfg.identity.username,
+                "-p",
+                &cfg.identity.password,
+                "-n",
+                &cfg.identity.hostname,
+                "--accept-license",
+            ],
+            &paths.l4t_dir,
+        )?;
+    }
 
     let sys = rootfs.join("etc/systemd/system");
 
@@ -150,6 +158,17 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
 
 fn new_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+/// Is `user` already present in the rootfs `/etc/passwd`? Read needs root
+/// (rootfs is root-owned); relies on the sudo cache primed by `sudo_validate`.
+fn user_baked(rootfs: &Path, user: &str) -> bool {
+    let passwd = rootfs.join("etc/passwd");
+    std::process::Command::new("sudo")
+        .args(["grep", "-q", &format!("^{user}:"), passwd.to_str().unwrap()])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 fn symlink(log: &Logger, target: &str, link: &Path) -> Result<()> {
