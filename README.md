@@ -57,6 +57,35 @@ Or all in one:
 just all
 ```
 
+## Rust CLI (alternative to `just`)
+
+The same pipeline is available as a Rust crate + CLI (`src/`, `Cargo.toml`),
+for integration with other Rust commissioning tooling. It reads TOML config
+(`jetson-flash.toml`) instead of `.env`; `JETSON_*` env vars override.
+
+```bash
+cargo build --release
+target/release/jetson-flash check     # deps|fetch|stage|preconfig|check|flash|all
+```
+
+| bash / just        | Rust CLI                     |
+|--------------------|------------------------------|
+| `just <step>`      | `jetson-flash <step>`        |
+| `.env`             | `jetson-flash.toml`          |
+| `lsusb` parse      | native libusb (`rusb`)       |
+| `uuidgen`, keyfiles| generated in-process         |
+
+Recovery detection and NM-keyfile/identity baking are native Rust; NVIDIA's
+`l4t_*.sh` / `apply_binaries.sh` and `apt`/`wget`/`tar` are still driven as
+subprocesses. Logs land in `logs/<step>-<ts>.log` (same as bash). As a library:
+
+```rust
+use jetson_flash::{Config, Paths, stages, logging::Logger};
+let paths = Paths::new(std::path::Path::new("."));
+let cfg = Config::load(&paths.repo_root.join("jetson-flash.toml"))?;
+stages::check::run(&cfg, &paths, &Logger::init("check", &paths.repo_root)?)?;
+```
+
 When the flash finishes, unplug the USB-C data cable, power-cycle the
 board, and SSH in:
 

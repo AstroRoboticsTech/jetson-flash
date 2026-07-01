@@ -1,0 +1,44 @@
+# jetson-flash Rust pipeline config. Mirrors the .env used by the `just`/bash
+# path. Load order (figment): this file, then JETSON_* env vars override.
+# Pass a different file with `jetson-flash --config <path> <cmd>`.
+
+[l4t]
+# JetPack 7.2 / L4T r39.2. Leave at defaults unless bumping JetPack.
+version = "39.2.0"
+bsp_url    = "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Jetson_Linux_R39.2.0_aarch64.tbz2"
+rootfs_url = "https://developer.nvidia.com/downloads/embedded/L4T/r39_Release_v2.0/release/Tegra_Linux_Sample-Root-Filesystem_R39.2.0_aarch64.tbz2"
+
+[board]
+# Orin Nano: "jetson-orin-nano-devkit-super". AGX: "jetson-agx-orin-devkit-super".
+name = "jetson-orin-nano-devkit-super"
+external_device = "nvme0n1p1"
+
+[identity]
+username  = "jetson"
+password  = "jetson"
+hostname  = "orin-nano"
+headless  = true
+autologin = true
+
+[network.ethernet]
+# Jetson uses PCIe predictable iface names, not eth0. Nano: enP8p1s0.
+# AGX differs (often enP1p1s0) — verify with `ip -br link` on a booted board.
+dev = "enP8p1s0"
+# CIDR for a static IP, or empty string "" for DHCP.
+static_ip = "10.42.0.10/24"
+# Empty gateway => eth never owns the default route (WiFi carries internet).
+gateway = ""
+dns = ["1.1.1.1", "8.8.8.8"]
+
+[network.wifi]
+# Empty ssid => skip WiFi entirely. Needs an M.2 E-key card.
+# Empty dev => NetworkManager matches by SSID only (recommended).
+dev = ""
+ssid = ""
+psk = ""
+dhcp = true
+static_ip = ""   # set => WiFi static, dhcp ignored
+gateway = ""     # WiFi default route (metric 200, fallback behind eth)
+
+[services]
+avahi = true     # mDNS => reach board as <hostname>.local

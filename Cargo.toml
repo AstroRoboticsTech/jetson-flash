@@ -1,0 +1,25 @@
+[package]
+name = "jetson-flash"
+version = "0.1.0"
+edition = "2021"
+description = "Headless Jetson Orin (Tegra234) flashing pipeline: config, staging, preconfig, recovery detection, NVMe flash"
+license = "Apache-2.0"
+
+[lib]
+name = "jetson_flash"
+path = "src/lib.rs"
+
+[[bin]]
+name = "jetson-flash"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+figment = { version = "0.10", features = ["toml", "env"] }
+rusb = "0.9"
+indicatif = "0.17"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
