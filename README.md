@@ -60,32 +60,45 @@ just all
 ## Rust CLI (alternative to `just`)
 
 The same pipeline is available as a Rust crate + CLI (`src/`, `Cargo.toml`),
-for integration with other Rust commissioning tooling. It reads TOML config
-(`jetson-flash.toml`) instead of `.env`; `JETSON_*` env vars override.
+for integration with other Rust commissioning tooling. Config is a
+**profile-based TOML** (`jetson-flash.toml`): a `[default]` base plus one
+`[<name>]` table per board. Secrets are supplied via env, never the file.
 
 ```bash
 cargo install jetson-flash            # from crates.io (needs libusb-1.0-0-dev)
-# or from a checkout:
-cargo install --path .
-jetson-flash check                    # deps|fetch|stage|preconfig|check|flash|all
+# or from a checkout: cargo install --path .
+
+jetson-flash init                     # seed ./jetson-flash.toml (embedded template)
+jetson-flash init --global            #   ...into ~/.config/jetson-flash/ instead
+jetson-flash --config /path/x.toml init   # ...or an explicit path
+jetson-flash edit                     # open the resolved config in $EDITOR
+jetson-flash profiles                 # list board profiles
+JETSON_IDENTITY_PASSWORD=secret \
+  jetson-flash --profile orin-nano all
 ```
 
-| bash / just        | Rust CLI                     |
-|--------------------|------------------------------|
-| `just <step>`      | `jetson-flash <step>`        |
-| `.env`             | `jetson-flash.toml`          |
-| `lsusb` parse      | native libusb (`rusb`)       |
-| `uuidgen`, keyfiles| generated in-process         |
+Config is discovered as: `--config` → `./jetson-flash.toml` → `~/.config/jetson-flash/jetson-flash.toml`.
+`--profile` (or `JETSON_PROFILE`) is required for every stage. `JETSON_*`
+env vars fill any key the active profile leaves unset — e.g.
+`JETSON_IDENTITY_PASSWORD`, `JETSON_NETWORK_WIFI_PSK`.
+
+| bash / just        | Rust CLI                          |
+|--------------------|-----------------------------------|
+| `just <step>`      | `jetson-flash -p <profile> <step>`|
+| `.env` (flat)      | `jetson-flash.toml` (profiles)    |
+| edit board values  | `--profile orin-nano` / `orin-agx`|
+| `lsusb` parse      | native libusb (`rusb`)            |
 
 Recovery detection and NM-keyfile/identity baking are native Rust; NVIDIA's
 `l4t_*.sh` / `apply_binaries.sh` and `apt`/`wget`/`tar` are still driven as
-subprocesses. Logs land in `logs/<step>-<ts>.log` (same as bash). As a library:
+subprocesses. Output is captured to `logs/<step>-<ts>.log` with a spinner
+(`-v` streams live). As a library:
 
 ```rust
 use jetson_flash::{Config, Paths, stages, logging::Logger};
 let paths = Paths::new(std::path::Path::new("."));
-let cfg = Config::load(&paths.repo_root.join("jetson-flash.toml"))?;
-stages::check::run(&cfg, &paths, &Logger::init("check", &paths.repo_root)?)?;
+let cfg = Config::load(&paths.repo_root.join("jetson-flash.toml"), "orin-nano")?;
+stages::check::run(&cfg, &paths, &Logger::init("check", &paths.repo_root, false)?)?;
 ```
 
 When the flash finishes, unplug the USB-C data cable, power-cycle the

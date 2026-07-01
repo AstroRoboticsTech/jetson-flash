@@ -23,7 +23,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 thiserror = "2"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 rusb = "0.9"

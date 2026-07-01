@@ -19,12 +19,31 @@ struct Cli {
     #[arg(short, long, global = true)]
     verbose: bool,
 
+    /// Board profile to load from the config (a [<name>] table). Required for
+    /// every stage; set once via the JETSON_PROFILE env var if you prefer.
+    #[arg(short, long, global = true, env = "JETSON_PROFILE")]
+    profile: Option<String>,
+
     #[command(subcommand)]
     cmd: Cmd,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Write a starter jetson-flash.toml (embedded template) to seed config.
+    /// Destination: --config <path> if given, else --global, else ./.
+    Init {
+        /// Write to the XDG config dir (~/.config/jetson-flash/) instead of ./.
+        #[arg(long)]
+        global: bool,
+        /// Overwrite an existing config file.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Open the resolved config file in $EDITOR (to add/edit profiles).
+    Edit,
+    /// List the board profiles defined in the config.
+    Profiles,
     /// Install host apt dependencies (Ubuntu 24.04).
     Deps,
     /// Download BSP + sample rootfs tarballs into work/.
@@ -49,10 +68,42 @@ fn main() -> Result<()> {
         None => std::env::current_dir().context("resolve current dir")?,
     };
     let paths = Paths::new(&repo_root);
-    let config_path = cli
-        .config
-        .unwrap_or_else(|| config::default_config_path(&repo_root));
-    let cfg = Config::load(&config_path)?;
+
+    if let Cmd::Init { global, force } = cli.cmd {
+        return init_config(cli.config.clone(), &repo_root, global, force);
+    }
+
+    let config_path = config::resolve_config_path(cli.config.clone(), &repo_root);
+
+    if matches!(cli.cmd, Cmd::Edit) {
+        return edit_config(&config_path);
+    }
+
+    if matches!(cli.cmd, Cmd::Profiles) {
+        let names = Config::profiles(&config_path);
+        if names.is_empty() {
+            println!("no profiles defined in {}", config_path.display());
+        } else {
+            println!("profiles in {}:", config_path.display());
+            for n in names {
+                println!("  {n}");
+            }
+        }
+        return Ok(());
+    }
+
+    if !config_path.exists() {
+        anyhow::bail!(
+            "no config found at {}. Run `jetson-flash init` (or `--global`) to seed one.",
+            config_path.display()
+        );
+    }
+
+    let profile = cli.profile.clone().ok_or_else(|| {
+        let known = Config::profiles(&config_path).join(", ");
+        anyhow::anyhow!("--profile is required (or set JETSON_PROFILE). Available: {known}")
+    })?;
+    let cfg = Config::load(&config_path, &profile)?;
     let run = Runner {
         cfg: &cfg,
         paths: &paths,
@@ -60,6 +111,7 @@ fn main() -> Result<()> {
     };
 
     match cli.cmd {
+        Cmd::Init { .. } | Cmd::Edit | Cmd::Profiles => unreachable!("handled above"),
         Cmd::Deps => run.step("deps", stages::deps::run),
         Cmd::Fetch => run.step("fetch", stages::fetch::run),
         Cmd::Stage => run.step("stage", stages::stage::run),
@@ -75,6 +127,56 @@ fn main() -> Result<()> {
             run.step("flash", stages::flash::run)
         }
     }
+}
+
+/// Seed a jetson-flash.toml from the embedded template. Destination:
+/// `--config <path>` if given, else `--global` (XDG), else `<repo_root>/`.
+fn init_config(
+    explicit: Option<PathBuf>,
+    repo_root: &std::path::Path,
+    global: bool,
+    force: bool,
+) -> Result<()> {
+    let dst = match explicit {
+        Some(p) => p,
+        None if global => config::xdg_config_path()
+            .context("cannot resolve XDG config dir (set XDG_CONFIG_HOME or HOME)")?,
+        None => config::default_config_path(repo_root),
+    };
+    if dst.exists() && !force {
+        anyhow::bail!(
+            "{} already exists (pass --force to overwrite)",
+            dst.display()
+        );
+    }
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    std::fs::write(&dst, config::TEMPLATE).with_context(|| format!("write {}", dst.display()))?;
+    println!("wrote {}", dst.display());
+    println!("edit it (or `jetson-flash edit`), then: jetson-flash --profile <name> <cmd>");
+    Ok(())
+}
+
+/// Open the resolved config in `$EDITOR` (falls back to `$VISUAL`, then `vi`).
+fn edit_config(path: &std::path::Path) -> Result<()> {
+    if !path.exists() {
+        anyhow::bail!(
+            "no config at {}. Run `jetson-flash init` first.",
+            path.display()
+        );
+    }
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vi".to_string());
+    let status = std::process::Command::new(&editor)
+        .arg(path)
+        .status()
+        .with_context(|| format!("launch editor `{editor}`"))?;
+    if !status.success() {
+        anyhow::bail!("editor `{editor}` exited with {status}");
+    }
+    Ok(())
 }
 
 struct Runner<'a> {

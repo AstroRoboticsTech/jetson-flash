@@ -8,7 +8,7 @@
 //! use jetson_flash::{Config, Paths, stages, logging::Logger};
 //! use std::path::Path;
 //! let paths = Paths::new(Path::new("."));
-//! let cfg = Config::load(&paths.repo_root.join("jetson-flash.toml"))?;
+//! let cfg = Config::load(&paths.repo_root.join("jetson-flash.toml"), "orin-nano")?;
 //! let log = Logger::init("check", &paths.repo_root, false)?;
 //! stages::check::run(&cfg, &paths, &log)?;
 //! # jetson_flash::Result::Ok(())

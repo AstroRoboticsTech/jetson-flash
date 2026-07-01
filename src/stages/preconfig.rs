@@ -28,6 +28,11 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
             cfg.identity.username
         ));
     } else {
+        let password = cfg
+            .identity
+            .password
+            .as_deref()
+            .ok_or(Error::MissingSecret("identity.password"))?;
         log.step(&format!(
             "creating default user {} on host {}",
             cfg.identity.username, cfg.identity.hostname
@@ -39,7 +44,7 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
                 "-u",
                 &cfg.identity.username,
                 "-p",
-                &cfg.identity.password,
+                password,
                 "-n",
                 &cfg.identity.hostname,
                 "--accept-license",

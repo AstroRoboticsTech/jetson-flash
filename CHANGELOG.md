@@ -6,6 +6,21 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+- Profile-based config: a `[default]` base table plus one `[<name>]` table per
+  board (`orin-nano`, `orin-agx`), selected with `--profile` / `JETSON_PROFILE`
+  (required for every stage). `profiles` command lists them.
+- `init` command seeds a `jetson-flash.toml` from a template embedded in the
+  binary — destination is `--config <path>`, else `--global` (XDG), else `./`.
+- `edit` command opens the resolved config in `$EDITOR`.
+- Config discovery: `--config` → `./jetson-flash.toml` →
+  `~/.config/jetson-flash/jetson-flash.toml`.
+
+### Changed
+- Secrets (`identity.password`, `network.wifi.psk`) are no longer stored in the
+  config file; supply them via `JETSON_IDENTITY_PASSWORD` /
+  `JETSON_NETWORK_WIFI_PSK`. `Config::load` now takes a profile name.
+
 ## [0.1.0]
 
 First Rust release. A library crate (`jetson_flash`) plus a CLI (`jetson-flash`)

@@ -40,8 +40,14 @@ pub enum Error {
     #[error("{0}")]
     Missing(String),
 
-    #[error("wifi ssid set but wifi psk is empty")]
+    #[error("wifi ssid set but wifi psk is empty (set JETSON_NETWORK_WIFI_PSK)")]
     WifiPskMissing,
+
+    #[error("unknown profile `{name}` (available: {})", .known.join(", "))]
+    UnknownProfile { name: String, known: Vec<String> },
+
+    #[error("{0} is required — supply it via environment (e.g. JETSON_IDENTITY_PASSWORD)")]
+    MissingSecret(&'static str),
 
     #[error("Jetson not ready to flash: {0}")]
     Recovery(#[from] RecoveryError),
