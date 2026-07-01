@@ -2,8 +2,15 @@
 name = "jetson-flash"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.74"
 description = "Headless Jetson Orin (Tegra234) flashing pipeline: config, staging, preconfig, recovery detection, NVMe flash"
 license = "Apache-2.0"
+repository = "https://github.com/AstroRoboticsTech/jetson-flash"
+homepage = "https://github.com/AstroRoboticsTech/jetson-flash"
+readme = "README.md"
+keywords = ["jetson", "nvidia", "l4t", "flashing", "embedded"]
+categories = ["command-line-utilities", "embedded"]
+exclude = ["work/", "work_*.bak/", "logs/", ".env", "docs/", "scripts/", "justfile"]
 
 [lib]
 name = "jetson_flash"

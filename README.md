@@ -64,8 +64,10 @@ for integration with other Rust commissioning tooling. It reads TOML config
 (`jetson-flash.toml`) instead of `.env`; `JETSON_*` env vars override.
 
 ```bash
-cargo build --release
-target/release/jetson-flash check     # deps|fetch|stage|preconfig|check|flash|all
+cargo install jetson-flash            # from crates.io (needs libusb-1.0-0-dev)
+# or from a checkout:
+cargo install --path .
+jetson-flash check                    # deps|fetch|stage|preconfig|check|flash|all
 ```
 
 | bash / just        | Rust CLI                     |

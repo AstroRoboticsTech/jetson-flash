@@ -53,7 +53,11 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
     // 2. Headless: multi-user.target + mask display managers.
     if cfg.identity.headless {
         log.step("headless mode: multi-user.target + mask gdm3");
-        symlink(log, "/lib/systemd/system/multi-user.target", &sys.join("default.target"))?;
+        symlink(
+            log,
+            "/lib/systemd/system/multi-user.target",
+            &sys.join("default.target"),
+        )?;
         symlink(log, "/dev/null", &sys.join("gdm3.service"))?;
         symlink(log, "/dev/null", &sys.join("gdm.service"))?;
         // oem-config gui may be absent; ignore failure.
@@ -62,7 +66,10 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
 
     // 3. tty1 autologin.
     if cfg.identity.autologin {
-        log.step(&format!("enabling tty1 autologin for {}", cfg.identity.username));
+        log.step(&format!(
+            "enabling tty1 autologin for {}",
+            cfg.identity.username
+        ));
         let dir = sys.join("getty@tty1.service.d");
         log.run("sudo", &["mkdir", "-p", dir.to_str().unwrap()])?;
         let override_conf = format!(
@@ -97,7 +104,12 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
             dns_nm,
             never_default,
         );
-        write_root_file(log, &nm_dir.join("eth-static.nmconnection"), "600", &content)?;
+        write_root_file(
+            log,
+            &nm_dir.join("eth-static.nmconnection"),
+            "600",
+            &content,
+        )?;
     }
 
     // 4b. WiFi.
@@ -113,13 +125,19 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
             format!("interface-name={}", wifi.dev)
         };
         let ipv4_block = if !wifi.static_ip.is_empty() {
-            log.step(&format!("WiFi {} static {} (metric 200)", wifi.ssid, wifi.static_ip));
+            log.step(&format!(
+                "WiFi {} static {} (metric 200)",
+                wifi.ssid, wifi.static_ip
+            ));
             let addr = if wifi.gateway.is_empty() {
                 wifi.static_ip.clone()
             } else {
                 format!("{},{}", wifi.static_ip, wifi.gateway)
             };
-            format!("[ipv4]\nmethod=manual\naddress1={}\ndns={};\nroute-metric=200", addr, dns_nm)
+            format!(
+                "[ipv4]\nmethod=manual\naddress1={}\ndns={};\nroute-metric=200",
+                addr, dns_nm
+            )
         } else if wifi.dhcp {
             log.step(&format!("WiFi {} DHCP (metric 200)", wifi.ssid));
             "[ipv4]\nmethod=auto\nroute-metric=200".to_string()
@@ -143,7 +161,10 @@ pub fn run(cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
 
     // 4c. mDNS / avahi.
     if cfg.services.avahi {
-        log.step(&format!("enabling avahi-daemon (mDNS for {}.local)", cfg.identity.hostname));
+        log.step(&format!(
+            "enabling avahi-daemon (mDNS for {}.local)",
+            cfg.identity.hostname
+        ));
         enable_service(log, &rootfs, "avahi-daemon.service")?;
         patch_nsswitch(log, &rootfs)?;
     }

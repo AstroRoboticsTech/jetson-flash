@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 
 pub fn run(_cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
     let bsp = find_tarball(&paths.work, "Jetson_Linux_R", "_aarch64.tbz2").ok_or_else(|| {
-        Error::Missing("BSP tarball (Jetson_Linux_R*_aarch64.tbz2) not found in work/; run `fetch`".into())
+        Error::Missing(
+            "BSP tarball (Jetson_Linux_R*_aarch64.tbz2) not found in work/; run `fetch`".into(),
+        )
     })?;
     let rootfs = find_tarball(
         &paths.work,
@@ -39,9 +41,17 @@ pub fn run(_cfg: &Config, paths: &Paths, log: &Logger) -> Result<()> {
         )?;
     }
 
-    if paths.l4t_dir.join("tools/l4t_flash_prerequisites.sh").is_file() {
+    if paths
+        .l4t_dir
+        .join("tools/l4t_flash_prerequisites.sh")
+        .is_file()
+    {
         log.step("l4t_flash_prerequisites.sh");
-        log.run_in("sudo", &["./tools/l4t_flash_prerequisites.sh"], &paths.l4t_dir)?;
+        log.run_in(
+            "sudo",
+            &["./tools/l4t_flash_prerequisites.sh"],
+            &paths.l4t_dir,
+        )?;
     }
 
     if paths
