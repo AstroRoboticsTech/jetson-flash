@@ -1,175 +1,181 @@
 # jetson-flash
 
-Terminal-only flashing pipeline for NVIDIA Jetson Orin devkits (Tegra234)
-from an Ubuntu 24.04 host. No SDK Manager, no Nix. Drives the official
-NVIDIA L4T `flash.sh` / `l4t_initrd_flash.sh` scripts through `just`.
+Headless flashing pipeline for NVIDIA Jetson Orin devkits (Tegra234) from a
+Linux host. No SDK Manager, no Nix — a Rust CLI + library driving the official
+NVIDIA L4T `l4t_initrd_flash.sh` / `apply_binaries.sh`.
 
-The end result is a fully headless board that boots straight into a
-logged-in shell, joins WiFi + wired LAN automatically, and answers to
+The result is a fully headless board that boots straight into a logged-in
+shell, joins WiFi + wired LAN automatically, and answers to
 `ssh <user>@<hostname>.local`. No display, no first-boot wizard.
+
+> A legacy `just`/bash pipeline (flat `.env`) also lives in-tree — see
+> [docs/legacy-just.md](docs/legacy-just.md). The Rust CLI is the primary path.
 
 ## Supported boards
 
-The pipeline is board-agnostic via the `.env` knobs. Per-board values
-(board conf, iface names, boot device, recovery) live in their own doc:
+| Board                      | JetPack        | Status                       | Doc |
+|----------------------------|----------------|------------------------------|-----|
+| Jetson Orin Nano 8GB Super | 7.2 (L4T r39.2)| Validated on hardware        | [docs/orin-nano.md](docs/orin-nano.md) |
+| Jetson AGX Orin devkit     | 7.2 (L4T r39.2)| Validated on hardware        | [docs/orin-agx.md](docs/orin-agx.md) |
 
-| Board                          | Doc                                  | Status         |
-|--------------------------------|--------------------------------------|----------------|
-| Jetson Orin Nano 8GB Super     | [docs/orin-nano.md](docs/orin-nano.md) | Validated r39.2 |
-| Jetson AGX Orin devkit         | [docs/orin-agx.md](docs/orin-agx.md)   | Board-ready (not yet flash-validated) |
+JetPack 6.2.1 (L4T r36.4.4) is available as a profile preset but not yet
+hardware-validated.
 
 ## Prerequisites
 
-- **Host:** Ubuntu 24.04 x86_64. ~10 GB free disk. USB-C cable to the board.
-- **Target:** a supported Jetson Orin devkit with an NVMe SSD in the M.2
-  M-key slot. See the per-board doc above for board-specific hardware
-  (WiFi card, boot device, recovery buttons).
-- `just` installed: `cargo install just` or `apt install just` (24.04
-  ships ≥1.34).
-- `git`, `wget`, `sudo`.
+- **Build/install:** `cargo` and `libusb-1.0-0-dev` (the `rusb` link dep) —
+  that's it. The crate builds anywhere `rusb` runs (Linux/macOS/Windows), and
+  `check` / `profiles` / `init` / `edit` work on any of them.
+- **Flashing:** verified on Linux x86_64 — `stage`/`preconfig`/`flash` drive
+  NVIDIA's L4T bash tooling (qemu, chroot, `sudo`), and `deps` installs its
+  packages via `apt` (Ubuntu 24.04 is the reference host for JetPack 7.2).
+  ~10 GB free disk, a USB-C cable.
+- **Target:** a Jetson Orin devkit with an NVMe SSD in the M.2 M-key slot (see
+  the per-board doc for WiFi card, boot device, and recovery buttons).
 
-## Getting started
-
-```bash
-git clone <this repo> ~/dev/jetson-flash
-cd ~/dev/jetson-flash
-cp .env.example .env
-# Edit .env — at minimum set JETSON_USERNAME / PASSWORD / HOSTNAME and
-# the WiFi credentials.
-$EDITOR .env
-```
-
-Then walk the pipeline:
+## Install
 
 ```bash
-just deps        # apt deps for Ubuntu 24.04 host (sudo)
-just fetch       # download BSP + sample rootfs (~2.5 GB)
-just stage       # extract, apply_binaries.sh (sudo, ~3 min)
-just preconfig   # bake user, hostname, headless target, IPs, WiFi, avahi
-just check       # confirm board is in APX recovery
-just no-autosuspend  # keep USB awake during flash
-just flash       # initrd flash to NVMe (~15-25 min)
+cargo install jetson-flash          # from crates.io
+# or from a checkout:
+cargo install --path .
 ```
 
-Or all in one:
+## Quick start
 
 ```bash
-just all
+jetson-flash init                   # seed ./jetson-flash.toml (embedded template)
+jetson-flash edit                   # edit it in $EDITOR (add/adjust profiles)
+jetson-flash profiles               # list board profiles
+
+# Board in APX recovery, then:
+JETSON_IDENTITY_PASSWORD=secret \
+  jetson-flash --profile orin-nano all
 ```
 
-When the flash finishes, unplug the USB-C data cable, power-cycle the
-board, and SSH in:
+`all` runs `deps → fetch → stage → preconfig → check → flash`; each stage is
+also a standalone subcommand. Bare `jetson-flash` prints help.
 
-```bash
-ssh beppo@beppo.local
+## Configuration
+
+Profile-based TOML: a `[default]` base table plus one `[<name>]` table per
+board. Select with `--profile` / `JETSON_PROFILE` (required for every stage).
+
+```toml
+[default]
+[default.identity]
+username = "jetson"
+headless = true
+autologin = true
+
+[orin-nano]
+jetpack = "7.2"                     # "6.2.1" => L4T r36.4.4
+[orin-nano.board]
+name = "jetson-orin-nano-devkit-super"
+external_device = "nvme0n1p1"
+[orin-nano.identity]
+hostname = "orin-nano"
+[orin-nano.network.ethernet]
+dev = "enP8p1s0"
+static_ip = "10.42.0.10/24"         # "" for DHCP
 ```
 
-## Defaults
+- **`jetpack`** (`"6.2.1"` | `"7.2"`) resolves the L4T version + BSP/rootfs URLs
+  from a built-in preset (`7.2` → r39.2 / Ubuntu 24.04; `6.2.1` → r36.4.4 /
+  Ubuntu 22.04). Pin custom values with `[<profile>.l4t]`.
+- **Discovery:** `--config` → `./jetson-flash.toml` →
+  `~/.config/jetson-flash/jetson-flash.toml`. `init` writes to `--config <path>`,
+  else `--global` (XDG), else `./`.
+- **Secrets** stay out of the file — `JETSON_IDENTITY_PASSWORD`,
+  `JETSON_NETWORK_WIFI_PSK`. Any `JETSON_*` var fills a key the profile leaves
+  unset.
 
-| Knob              | Default                              |
-|-------------------|--------------------------------------|
-| `L4T_VERSION`     | `39.2.0` (JetPack 7.2)               |
-| `BOARD`           | `jetson-orin-nano-devkit-super` (see per-board doc) |
-| `EXTERNAL_DEVICE` | `nvme0n1p1`                          |
+## Workspace / cache
 
-> **JetPack 7.2 note.** JetPack 7.2 ships an interactive *Jetson ISO
-> USB installer* as the consumer flow (SD-card images are dropped). That
-> installer cannot bake user/hostname/headless/WiFi config and is not
-> scriptable. This repo deliberately stays on the host-side BSP +
-> `l4t_initrd_flash.sh` path, which still ships in the r39.2 Driver
-> Package and is the only way to produce an unattended headless image.
-> Rootfs is now Ubuntu 24.04 (was 22.04); kernel is 6.8.
+Downloads, staging, and logs live under a base dir: `--work-dir` /
+`JETSON_WORK_DIR` if set, else the repo when run from a checkout (`Cargo.toml`
+present), else `~/.cache/jetson-flash`. The layout is namespaced so boards and
+JetPack versions never collide:
 
-`BOARD` is the one knob that changes per board — set it from the
-[per-board doc](#supported-boards). Override via `.env` or on the command
-line (`just BOARD=jetson-agx-orin-devkit flash`).
-
-## First-boot identity (set in `.env`)
-
-| Knob               | Effect                                                         |
-|--------------------|----------------------------------------------------------------|
-| `JETSON_USERNAME`  | Default user, baked via `l4t_create_default_user.sh`.          |
-| `JETSON_PASSWORD`  | Initial password for that user.                                |
-| `JETSON_HOSTNAME`  | `/etc/hostname`.                                               |
-| `JETSON_HEADLESS`  | `true` → multi-user.target; mask gdm/oem-config GUI.           |
-| `JETSON_AUTOLOGIN` | `true` → systemd getty autologin on tty1.                      |
-| `JETSON_ETH_DEV`   | PCIe iface name. Orin Nano: `enP8p1s0`. Find via `ip -br link`.|
-| `JETSON_STATIC_IP` | CIDR, e.g. `10.42.0.10/24`. Leave blank for DHCP.              |
-| `JETSON_GATEWAY`   | Default route (leave blank → eth never owns default route).    |
-| `JETSON_DNS`       | Comma-separated DNS servers.                                   |
-| `JETSON_WIFI_SSID` | SSID. Blank → skip WiFi config. Requires M.2 WiFi card.        |
-| `JETSON_WIFI_PSK`  | WPA2 passphrase.                                               |
-| `JETSON_WIFI_DEV`  | Blank → NetworkManager matches by SSID only (recommended).     |
-| `JETSON_WIFI_DHCP` | `true` (default) or `false`. Ignored when static IP is set.    |
-| `JETSON_WIFI_STATIC_IP` | Static CIDR for WiFi, e.g. `192.168.1.101/24`.            |
-| `JETSON_WIFI_GATEWAY`   | WiFi default route gateway (route metric 200, fallback).  |
-| `JETSON_AVAHI`     | `true` enables avahi-daemon → reach as `<hostname>.local`.     |
-
-After `just flash` the board boots directly to a logged-in tty on the
-configured IP. SSH is enabled. No display, no oem-config wizard.
-
-## Recovery mode
-
-The board must be in APX recovery before `just flash`. Button/jumper
-location differs per board — see the per-board doc. If the board is already
-running and reachable, software-trigger it:
-
-```bash
-ssh <user>@<host> 'sudo reboot --force forced-recovery'
+```text
+<base>/
+  downloads/<l4t_version>/*.tbz2              # shared across boards
+  work/<profile>-<l4t_version>/Linux_for_Tegra
+  logs/<profile>-<l4t_version>/<step>-<ts>.log
 ```
 
-`just check` confirms recovery via `lsusb`:
+Tarballs are keyed by L4T version only (the BSP is board-agnostic → downloaded
+once per version); staging + logs are keyed by profile+version because
+`preconfig` bakes board-specific identity into the rootfs. Output is captured
+to the per-slot log with a spinner; `-v` streams subprocess output live.
 
-| USB ID       | Board                       |
-|--------------|-----------------------------|
-| `0955:7523`  | Orin Nano in APX recovery   |
-| `0955:7423`  | Orin NX in APX recovery     |
-| `0955:7023`  | AGX Orin in APX recovery    |
-
-`0955:7020` means L4T is already running — NOT recovery; re-trigger.
-
-Per-board reachability (mDNS / eth / WiFi addresses) is documented in each
-[board doc](#supported-boards).
-
-## Ubuntu 24.04 host gotchas
-
-- Python 3.12 dropped `distutils`. `python3-setuptools` (in `just deps`)
-  covers it.
-- AppArmor on 24.04 can block NFS during initrd flash; stop it if the
-  rootfs transfer hangs: `sudo systemctl stop apparmor`.
-- USB autosuspend can interrupt flashing: run `just no-autosuspend`
-  before `just flash`.
+Recovery detection and NetworkManager-keyfile / identity baking are native
+Rust; NVIDIA's `l4t_*.sh` / `apply_binaries.sh` and `apt`/`wget`/`tar` are
+driven as subprocesses.
 
 ## What gets baked into the rootfs
 
-`just preconfig` runs against the staged `Linux_for_Tegra/rootfs/` and:
+`preconfig` runs against the staged `Linux_for_Tegra/rootfs/` and: creates the
+default user (skipping oem-config); sets `multi-user.target` and masks gdm /
+oem-config GUI; adds a tty1 autologin override; writes NetworkManager keyfiles
+(eth pinned by interface name, WiFi matched by SSID, mode 600, WiFi route metric
+200 so eth stays primary); enables `ssh` + `avahi-daemon`; patches `nsswitch`
+so `mdns4_minimal` resolves first. It is idempotent — re-runs skip user creation
+when the user is already baked.
 
-1. Creates the default user (`l4t_create_default_user.sh`), skipping
-   oem-config.
-2. Sets `default.target` to `multi-user.target`, masks `gdm3` and
-   `nv-oem-config-gui`.
-3. Drops a getty `agetty --autologin` override on tty1.
-4. Writes NetworkManager keyfiles into
-   `/etc/NetworkManager/system-connections/` (`eth-static.nmconnection`,
-   `wifi-home.nmconnection`, mode 600). Eth keyfile pins by
-   `interface-name=$JETSON_ETH_DEV`; WiFi keyfile matches by SSID and
-   stores the PSK plaintext. WiFi default route uses metric 200 so eth
-   stays primary when both ifaces have gateways.
-5. Enables `ssh.service` and `avahi-daemon.service`. NetworkManager is
-   already active in stock L4T so wpa_supplicant runs on demand via NM.
-6. Patches `/etc/nsswitch.conf` so `mdns4_minimal` resolves before DNS.
+## Recovery mode
+
+The board must be in APX recovery before `flash`. Button location differs per
+board (see the per-board doc). `check` confirms via libusb:
+
+| USB ID       | Board                     |
+|--------------|---------------------------|
+| `0955:7523`  | Orin Nano in APX recovery |
+| `0955:7423`  | Orin NX in APX recovery   |
+| `0955:7023`  | AGX Orin in APX recovery  |
+
+`0955:7020` = L4T already running, **not** recovery — re-trigger.
+
+After `flash`: unplug the USB-C data cable, power-cycle, and
+`ssh <user>@<hostname>.local`.
+
+## Library
+
+Three moves: load a profile, build the workspace, run stages.
+
+```rust
+use jetson_flash::{run_all, run_step, Config, Paths, Step};
+use std::path::Path;
+
+let cfg = Config::load(Path::new("jetson-flash.toml"), "orin-nano")?;
+let paths = Paths::new(Path::new("."), "orin-nano", cfg.l4t.version());
+
+run_step(Step::Check, &cfg, &paths, false)?;   // one stage
+run_all(&cfg, &paths, false)?;                 // deps → fetch → stage → … → flash
+```
+
+`run_step` / `run_all` open the per-slot log and run the stage(s); each stage is
+also a bare `stages::<name>::run(&Config, &Paths, &Logger)` if you manage the
+`Logger` yourself. Errors are a typed enum (`jetson_flash::Error`); recovery
+state is `stages::check::UsbState` / `Model`. Full runnable example:
+[`examples/pipeline.rs`](examples/pipeline.rs) — `cargo run --example pipeline -- orin-nano`.
 
 ## Troubleshooting
 
-- **Flash hangs on "Sending bootloader and pre-requisite binaries":** USB
-  autosuspend or a flaky cable. Re-cycle REC+RST, `just no-autosuspend`,
-  swap USB ports (prefer a direct host port over a hub).
-- **`<hostname>.local` does not resolve from host:** host needs avahi
-  too (`sudo apt install avahi-daemon` on Linux dev box; macOS has it
-  built-in).
-- **WiFi connects but no internet:** verify `JETSON_WIFI_GATEWAY` is
-  reachable; `ip route` on the board should show a default route via
-  wlan0.
-- **Re-flash after a tweak:** `just preconfig` is idempotent for most
-  steps but `l4t_create_default_user.sh` may complain on second run.
-  `just clean` + start over if needed.
+- **`sudo: a terminal is required` / `sudo authentication failed`:** the CLI
+  validates sudo with `sudo -v`, which needs an interactive terminal. Run from a
+  real terminal (it prompts once), or grant NOPASSWD sudo for headless/CI.
+  `check`, `profiles`, `init`, `edit`, `fetch` need no sudo; `deps`, `stage`,
+  `preconfig`, `flash` do.
+- **Board detected as `0955:7020`, "not in APX recovery":** it booted L4T
+  instead of recovery. Re-enter recovery (hold FC, tap RST) so it enumerates as
+  `0955:7523` (Nano) / `0955:7023` (AGX).
+- **Flash hangs / USB drops mid-transfer:** autosuspend or a flaky cable/hub.
+  Use a direct host USB port, a data-rated cable; `echo -1 | sudo tee
+  /sys/module/usbcore/parameters/autosuspend` before flashing.
+- **`<hostname>.local` won't resolve from the host:** the host also needs avahi.
+- **AppArmor blocks the initrd NFS transfer:** `sudo systemctl stop apparmor`.
+
+## License
+
+Apache-2.0.

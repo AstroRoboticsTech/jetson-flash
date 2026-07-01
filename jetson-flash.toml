@@ -1,0 +1,74 @@
+# jetson-flash Rust pipeline config — profile-based.
+#
+#   [default]      shared base, merged into every profile
+#   [<name>]       a board profile that overrides the base
+#
+# Select one:  jetson-flash --profile orin-nano <cmd>   (or JETSON_PROFILE=…)
+# List them:   jetson-flash profiles
+#
+# Secrets are NOT stored here. Supply at flash time via env:
+#   JETSON_IDENTITY_PASSWORD=…   (required to create the default user)
+#   JETSON_NETWORK_WIFI_PSK=…    (required if a profile sets a wifi ssid)
+# Any JETSON_* var fills a key the active profile leaves unset.
+
+[default]
+# Each profile picks a JetPack via `jetpack = "6.2.1" | "7.2"`, which resolves
+# the L4T version + BSP/rootfs URLs from a built-in preset. To pin a custom
+# L4T instead, set [<profile>.l4t] version/bsp_url/rootfs_url explicitly.
+
+[default.identity]
+username  = "jetson"
+headless  = true
+autologin = true
+# password: env-only (JETSON_IDENTITY_PASSWORD)
+
+[default.services]
+avahi = true
+
+# --- Orin Nano 8GB Super devkit -------------------------------------------
+[orin-nano]
+jetpack = "7.2"                 # "6.2.1" => L4T r36.4.4 (Ubuntu 22.04)
+
+[orin-nano.board]
+name            = "jetson-orin-nano-devkit-super"
+external_device = "nvme0n1p1"
+
+[orin-nano.identity]
+hostname = "orin-nano"
+
+[orin-nano.network.ethernet]
+dev       = "enP8p1s0"          # Nano PCIe iface
+static_ip = "10.42.0.10/24"     # "" for DHCP
+gateway   = ""                  # "" => eth never owns the default route
+dns       = ["1.1.1.1", "8.8.8.8"]
+
+[orin-nano.network.wifi]
+dev       = ""                  # "" => match by SSID only
+ssid      = ""                  # "" => skip WiFi (set JETSON_NETWORK_WIFI_PSK too)
+dhcp      = true
+static_ip = ""
+gateway   = ""
+
+# --- AGX Orin devkit ------------------------------------------------------
+[orin-agx]
+jetpack = "7.2"
+
+[orin-agx.board]
+name            = "jetson-agx-orin-devkit-super"   # 64GB => -super (MAXN SUPER)
+external_device = "nvme0n1p1"
+
+[orin-agx.identity]
+hostname = "orin-agx"
+
+[orin-agx.network.ethernet]
+dev       = "enP1p1s0"          # AGX Marvell AQtion — VERIFY with `ip -br link`
+static_ip = "10.42.0.10/24"
+gateway   = ""
+dns       = ["1.1.1.1", "8.8.8.8"]
+
+[orin-agx.network.wifi]
+dev       = ""
+ssid      = ""                  # AGX devkit needs an M.2 E-key card
+dhcp      = true
+static_ip = ""
+gateway   = ""
